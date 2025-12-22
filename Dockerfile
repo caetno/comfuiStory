@@ -66,25 +66,122 @@ WORKDIR /comfyui
 
 # --- SYMLINK IMPLEMENTATION START ---
 
-# Clean out the empty model directories that ComfyUI installs (e.g., /comfyui/models/loras)
-RUN rm -rf /comfyui/models/loras /comfyui/models/vae /comfyui/models/diffusion_models /comfyui/models/text_encoders
+# Ensure the Network Volume has the expected folder structure
+RUN mkdir -p \
+    /runpod-volume/audio_encoders \
+    /runpod-volume/checkpoints \
+    /runpod-volume/clip \
+    /runpod-volume/clip_vision \
+    /runpod-volume/configs \
+    /runpod-volume/controlnet \
+    /runpod-volume/diffusers \
+    /runpod-volume/diffusion_models \
+    /runpod-volume/embeddings \
+    /runpod-volume/gligen \
+    /runpod-volume/hypernetworks \
+    /runpod-volume/latent_upscale_models \
+    /runpod-volume/loras \
+    /runpod-volume/model_patches \
+    /runpod-volume/photomaker \
+    /runpod-volume/style_models \
+    /runpod-volume/text_encoders \
+    /runpod-volume/unet \
+    /runpod-volume/upscale_models \
+    /runpod-volume/vae \
+    /runpod-volume/vae_approx
+
+# Clean out the empty model directories that ComfyUI installs
+RUN rm -rf \
+    /comfyui/models/audio_encoders \
+    /comfyui/models/checkpoints \
+    /comfyui/models/clip \
+    /comfyui/models/clip_vision \
+    /comfyui/models/configs \
+    /comfyui/models/controlnet \
+    /comfyui/models/diffusers \
+    /comfyui/models/diffusion_models \
+    /comfyui/models/embeddings \
+    /comfyui/models/gligen \
+    /comfyui/models/hypernetworks \
+    /comfyui/models/latent_upscale_models \
+    /comfyui/models/loras \
+    /comfyui/models/model_patches \
+    /comfyui/models/photomaker \
+    /comfyui/models/style_models \
+    /comfyui/models/text_encoders \
+    /comfyui/models/unet \
+    /comfyui/models/upscale_models \
+    /comfyui/models/vae \
+    /comfyui/models/vae_approx
 
 # Create symbolic links to the Network Volume mount point (/runpod-volume)
 # This fools ComfyUI into thinking the models are local.
 
+# Audio Encoders
+RUN ln -s /runpod-volume/audio_encoders /comfyui/models/audio_encoders
+
+# Checkpoints (classic SD/SDXL loader path)
+RUN ln -s /runpod-volume/checkpoints /comfyui/models/checkpoints
+
+# CLIP (legacy; some loaders still look here)
+RUN ln -s /runpod-volume/clip /comfyui/models/clip
+
+# CLIP Vision (IP-Adapter and similar)
+RUN ln -s /runpod-volume/clip_vision /comfyui/models/clip_vision
+
+# Configs
+RUN ln -s /runpod-volume/configs /comfyui/models/configs
+
+# ControlNet
+RUN ln -s /runpod-volume/controlnet /comfyui/models/controlnet
+
+# Diffusers
+RUN ln -s /runpod-volume/diffusers /comfyui/models/diffusers
+
+# UNETs / Diffusion Models (newer ComfyUI path)
+RUN ln -s /runpod-volume/diffusion_models /comfyui/models/diffusion_models
+
+# Embeddings
+RUN ln -s /runpod-volume/embeddings /comfyui/models/embeddings
+
+# GLIGEN
+RUN ln -s /runpod-volume/gligen /comfyui/models/gligen
+
+# Hypernetworks
+RUN ln -s /runpod-volume/hypernetworks /comfyui/models/hypernetworks
+
+# Latent Upscale Models
+RUN ln -s /runpod-volume/latent_upscale_models /comfyui/models/latent_upscale_models
+
 # LoRAs
 RUN ln -s /runpod-volume/loras /comfyui/models/loras
+
+# Model Patches
+RUN ln -s /runpod-volume/model_patches /comfyui/models/model_patches
+
+# PhotoMaker
+RUN ln -s /runpod-volume/photomaker /comfyui/models/photomaker
+
+# Style Models
+RUN ln -s /runpod-volume/style_models /comfyui/models/style_models
+
+# Text Encoders (newer CLIP folder name)
+RUN ln -s /runpod-volume/text_encoders /comfyui/models/text_encoders
+
+# UNET (legacy folder still referenced by some nodes/workflows)
+RUN ln -s /runpod-volume/unet /comfyui/models/unet
+
+# Upscale Models
+RUN ln -s /runpod-volume/upscale_models /comfyui/models/upscale_models
 
 # VAEs
 RUN ln -s /runpod-volume/vae /comfyui/models/vae
 
-# UNETs / Diffusion Models
-RUN ln -s /runpod-volume/diffusion_models /comfyui/models/diffusion_models
-
-# CLIP / Text Encoders
-RUN ln -s /runpod-volume/text_encoders /comfyui/models/text_encoders
+# VAE Approx
+RUN ln -s /runpod-volume/vae_approx /comfyui/models/vae_approx
 
 # --- SYMLINK IMPLEMENTATION END ---
+
 
 # Go back to the root
 WORKDIR /
