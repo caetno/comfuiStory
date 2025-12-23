@@ -204,7 +204,7 @@ ENV PIP_NO_INPUT=1
 COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
 RUN chmod +x /usr/local/bin/comfy-manager-set-mode
 
-RUN /usr/local/bin/comfy-manager-set-mode \
+RUN /usr/local/bin/comfy-manager-set-mode public \
  && /usr/local/bin/comfy-node-install ComfyUI_IPAdapter_plus
 
 # Set the default command to run when starting the container
