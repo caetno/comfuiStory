@@ -20,11 +20,13 @@ ENV PYTHONUNBUFFERED=1
 ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 
 # Install Python, git and other necessary tools
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-venv \
     git \
     wget \
+    curl \
+    ca-certificates \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
@@ -32,7 +34,10 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     ffmpeg \
     && ln -sf /usr/bin/python3.12 /usr/bin/python \
-    && ln -sf /usr/bin/pip3 /usr/bin/pip
+    && ln -sf /usr/bin/pip3 /usr/bin/pip \
+    && apt-get autoremove -y \
+    && apt-get clean -y \
+    && rm -rf /var/lib/apt/lists/*
 
 # Clean up to reduce image size
 RUN apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
@@ -109,8 +114,13 @@ ENV PIP_NO_INPUT=1
 COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
 RUN chmod +x /usr/local/bin/comfy-manager-set-mode
 
+# Add annotator prefetch tooling + manifest
+COPY scripts/prefetch-annotators.sh /usr/local/bin/prefetch-annotators
+RUN chmod +x /usr/local/bin/prefetch-annotators
+COPY config/annotators.manifest /tmp/annotators.manifest
+
 RUN /usr/local/bin/comfy-manager-set-mode public \
  && /usr/local/bin/comfy-node-install ComfyUI_IPAdapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui
-
+ && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
 # Set the default command to run when starting the container
 CMD ["/start.sh"]
