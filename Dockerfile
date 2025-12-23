@@ -116,7 +116,7 @@ RUN chmod +x /usr/local/bin/prefetch-annotators
 COPY config/annotators.manifest /tmp/annotators.manifest
 
 RUN /usr/local/bin/comfy-manager-set-mode public \
- && /usr/local/bin/comfy-node-install ComfyUI_IPAdapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui
+ && /usr/local/bin/comfy-node-install ComfyUI_IPAdapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui \
  && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
 
 # Add application code and scripts
