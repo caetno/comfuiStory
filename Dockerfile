@@ -110,7 +110,7 @@ COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
 RUN chmod +x /usr/local/bin/comfy-manager-set-mode
 
 RUN /usr/local/bin/comfy-manager-set-mode public \
- && /usr/local/bin/comfy-node-install ComfyUI_IPAdapter_plus
+ && /usr/local/bin/comfy-node-install ComfyUI_IPAdapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui
 
 # Set the default command to run when starting the container
 CMD ["/start.sh"]
