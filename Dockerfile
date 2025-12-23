@@ -66,7 +66,7 @@ WORKDIR /comfyui
 
 # --- SYMLINK IMPLEMENTATION START ---
 
-COPY models.dirs /tmp/models.dirs
+COPY config/models.dirs /tmp/models.dirs
 
 RUN set -eux; \
     # 1) Ensure volume folders exist
