@@ -66,27 +66,37 @@ WORKDIR /comfyui
 
 # --- SYMLINK IMPLEMENTATION START ---
 
-# Keep the list in one place.
-# Space-separated is simplest; newline-separated also works.
-ARG MODEL_DIRS="audio_encoders checkpoints clip clip_vision configs controlnet diffusers diffusion_models embeddings gligen hypernetworks ipadapter latent_upscale_models loras model_patches photomaker style_models text_encoders unet upscale_models vae vae_approx"
+COPY config/models.dirs /tmp/models.dirs
 
 RUN set -eux; \
-    # 1) Ensure the Network Volume has the expected folder structure
-    for d in ${MODEL_DIRS}; do \
+    # Strip comments/blank lines if you decide to support them later
+    dirs="$(grep -Ev '^\s*($|#)' /tmp/models.dirs)"; \
+    \
+    # 1) Ensure volume folders exist
+    while IFS= read -r d; do \
       mkdir -p "/runpod-volume/${d}"; \
-    done; \
+    done <<EOF \
+${dirs} \
+EOF; \
     \
-    # 2) Remove ComfyUI's empty model directories (ignore if absent)
-    for d in ${MODEL_DIRS}; do \
+    # 2) Remove ComfyUI directories
+    while IFS= read -r d; do \
       rm -rf "/comfyui/models/${d}"; \
-    done; \
+    done <<EOF \
+${dirs} \
+EOF; \
     \
-    # 3) Create symlinks (idempotent-ish: remove any existing path first)
-    for d in ${MODEL_DIRS}; do \
+    # 3) Symlink
+    while IFS= read -r d; do \
       ln -s "/runpod-volume/${d}" "/comfyui/models/${d}"; \
-    done
+    done <<EOF \
+${dirs} \
+EOF; \
+    \
+    rm -f /tmp/models.dirs
 
 # --- SYMLINK IMPLEMENTATION END ---
+
 
 
 
