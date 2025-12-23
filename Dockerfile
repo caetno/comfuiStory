@@ -99,10 +99,6 @@ WORKDIR /
 # Install Python runtime dependencies for the handler
 RUN uv pip install runpod requests websocket-client
 
-# Add application code and scripts
-ADD src/start.sh handler.py test_input.json ./
-RUN chmod +x /start.sh
-
 # Add script to install custom nodes
 COPY scripts/comfy-node-install.sh /usr/local/bin/comfy-node-install
 RUN chmod +x /usr/local/bin/comfy-node-install
@@ -122,5 +118,10 @@ COPY config/annotators.manifest /tmp/annotators.manifest
 RUN /usr/local/bin/comfy-manager-set-mode public \
  && /usr/local/bin/comfy-node-install ComfyUI_IPAdapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui
  && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
+
+# Add application code and scripts
+ADD src/start.sh handler.py test_input.json ./
+RUN chmod +x /start.sh
+ 
 # Set the default command to run when starting the container
 CMD ["/start.sh"]
