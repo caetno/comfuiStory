@@ -66,39 +66,27 @@ WORKDIR /comfyui
 
 # --- SYMLINK IMPLEMENTATION START ---
 
-COPY config/models.dirs /tmp/models.dirs
+COPY models.dirs /tmp/models.dirs
 
 RUN set -eux; \
-    # Strip comments/blank lines if you decide to support them later
-    dirs="$(grep -Ev '^\s*($|#)' /tmp/models.dirs)"; \
-    \
     # 1) Ensure volume folders exist
     while IFS= read -r d; do \
       mkdir -p "/runpod-volume/${d}"; \
-    done <<EOF \
-${dirs} \
-EOF; \
+    done < /tmp/models.dirs; \
     \
     # 2) Remove ComfyUI directories
     while IFS= read -r d; do \
       rm -rf "/comfyui/models/${d}"; \
-    done <<EOF \
-${dirs} \
-EOF; \
+    done < /tmp/models.dirs; \
     \
-    # 3) Symlink
+    # 3) Create symlinks
     while IFS= read -r d; do \
       ln -s "/runpod-volume/${d}" "/comfyui/models/${d}"; \
-    done <<EOF \
-${dirs} \
-EOF; \
+    done < /tmp/models.dirs; \
     \
     rm -f /tmp/models.dirs
 
 # --- SYMLINK IMPLEMENTATION END ---
-
-
-
 
 # Go back to the root
 WORKDIR /
