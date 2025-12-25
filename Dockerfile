@@ -120,8 +120,14 @@ RUN /usr/local/bin/comfy-manager-set-mode public \
  && comfy node install comfyui_ipadapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui \
  && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
 
+# Install ONNX Runtime
+RUN uv pip install --no-cache-dir "onnxruntime-gpu" || uv pip install --no-cache-dir "onnxruntime"
+
 # Install insightface for IPAdapter FaceID
-RUN uv pip install --no-cache-dir "insightface==0.7.3"
+ADD https://huggingface.co/AlienMachineAI/insightface-0.7.3-cp312-cp312-linux_x86_64.whl/resolve/main/insightface-0.7.3-cp312-cp312-linux_x86_64.whl /tmp/insightface.whl
+RUN uv pip install --no-cache-dir "numpy==1.26.4" \
+ && uv pip install --no-cache-dir /tmp/insightface.whl
+
 
 # Add application code and scripts
 ADD src/start.sh handler.py test_input.json ./
