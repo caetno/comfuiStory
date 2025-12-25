@@ -1,7 +1,6 @@
 # Build argument for base image selection
 ARG BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
 
-# Stage 1: Base image with common dependencies
 FROM ${BASE_IMAGE} AS base
 
 # Build arguments for this stage with sensible defaults for standalone builds
@@ -12,14 +11,11 @@ ARG PYTORCH_INDEX_URL
 
 # Prevents prompts from packages asking for user input during installation
 ENV DEBIAN_FRONTEND=noninteractive
-# Prefer binary wheels over source distributions for faster pip installations
 ENV PIP_PREFER_BINARY=1
-# Ensures output from python is printed immediately to the terminal without buffering
 ENV PYTHONUNBUFFERED=1
-# Speed up some cmake builds
 ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 
-# IMPORTANT: comfy-cli workspace + actual ComfyUI root (workspace installs into /comfyui/ComfyUI)
+# comfy-cli workspace & actual ComfyUI root
 ENV COMFY_WORKSPACE=/comfyui
 ENV COMFY_ROOT=/comfyui/ComfyUI
 
@@ -42,9 +38,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get autoremove -y \
     && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/*
-
-# Clean up to reduce image size
-RUN apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 # Install uv (latest) using official installer and create isolated venv
 RUN wget -qO- https://astral.sh/uv/install.sh | sh \
@@ -70,10 +63,12 @@ RUN if [ "$ENABLE_PYTORCH_UPGRADE" = "true" ]; then \
       uv pip install --force-reinstall torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}; \
     fi
 
-# Work in the ACTUAL ComfyUI root
-WORKDIR ${COMFY_ROOT}
+# Ensure COMFY_ROOT exists
+RUN test -d "${COMFY_ROOT}"
 
 # --- SYMLINK IMPLEMENTATION START (FIXED PATHS) ---
+
+WORKDIR ${COMFY_ROOT}
 
 COPY config/models.dirs /tmp/models.dirs
 
@@ -103,7 +98,7 @@ WORKDIR /
 # Install Python runtime dependencies for the handler
 RUN uv pip install runpod requests websocket-client
 
-# Add script to install custom nodes
+# Add script to install custom nodes (kept, but we will also call comfy directly w/ workspace)
 COPY scripts/comfy-node-install.sh /usr/local/bin/comfy-node-install
 RUN chmod +x /usr/local/bin/comfy-node-install
 
@@ -123,29 +118,19 @@ COPY config/annotators.manifest /tmp/annotators.manifest
 WORKDIR ${COMFY_ROOT}
 
 RUN /usr/local/bin/comfy-manager-set-mode public \
- && /usr/local/bin/comfy-node-install ComfyUI_IPAdapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui \
+ && comfy --workspace "${COMFY_WORKSPACE}" node install --mode=remote \
+      ComfyUI_IPAdapter_plus \
+      comfyui_controlnet_aux \
+      comfyui-impact-pack \
+      rgthree-comfy \
+      efficiency-nodes-comfyui \
  && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
 
-# Build-time sanity check: verify IPAdapterAdvanced is actually registered
-RUN python - <<'PY'\n\
-import os, sys, subprocess, re\n\
-ws=os.environ.get('COMFY_WORKSPACE','/comfyui')\n\
-p=subprocess.run(['comfy', f'--workspace={ws}', 'which'], capture_output=True, text=True)\n\
-out=p.stdout+p.stderr\n\
-m=re.search(r'Target ComfyUI path:\\s*(.*)', out)\n\
-assert m, 'Could not parse comfy which output:\\n'+out\n\
-root=m.group(1).strip()\n\
-sys.path.insert(0, root)\n\
-import nodes\n\
-ok = 'IPAdapterAdvanced' in getattr(nodes, 'NODE_CLASS_MAPPINGS', {})\n\
-print('ComfyUI root:', root)\n\
-print('IPAdapterAdvanced present:', ok)\n\
-assert ok, 'IPAdapterAdvanced is missing (custom node not loaded / wrong workspace / dependency import error)'\n\
-PY
+# Build-time sanity check: verify IPAdapterAdvanced is registered (no heredoc)
+RUN python -c "import os,sys,subprocess,re; ws=os.environ.get('COMFY_WORKSPACE','/comfyui'); p=subprocess.run(['comfy', f'--workspace={ws}', 'which'], capture_output=True, text=True); out=p.stdout+p.stderr; m=re.search(r'Target ComfyUI path:\\\\s*(.*)', out); assert m, 'Could not parse comfy which output:\\n'+out; root=m.group(1).strip(); sys.path.insert(0, root); import nodes; ok=('IPAdapterAdvanced' in getattr(nodes,'NODE_CLASS_MAPPINGS',{})); print('ComfyUI root:', root); print('IPAdapterAdvanced present:', ok); assert ok, 'IPAdapterAdvanced missing (wrong workspace / node not loaded / dependency import error)'"
 
 # Add application code and scripts
 ADD src/start.sh handler.py test_input.json ./
 RUN chmod +x /start.sh
 
-# Set the default command to run when starting the container
 CMD ["/start.sh"]
