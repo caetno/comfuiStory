@@ -1,44 +1,74 @@
 #!/usr/bin/env bash
-# comfy-node-install: install custom ComfyUI nodes and fail with non-zero
-# exit code if any of them cannot be installed. On failure it prints the
-# list of nodes that could not be installed and hints the user to consult
-# https://registry.comfy.org/ for correct names.
+# comfy-node-install: install custom ComfyUI nodes into the correct workspace and verify.
 set -euo pipefail
 
 if [[ $# -eq 0 ]]; then
   echo "Usage: comfy-node-install <node1> [<node2> …]" >&2
-  exit 64  # EX_USAGE
+  exit 64
 fi
+
+# REQUIRED: point this at the SAME workspace you used for `comfy install --workspace ...`
+: "${COMFY_WORKSPACE:=/comfyui}"
 
 log=$(mktemp)
 
-# run installation – some modes return non-zero even on success, so we
-# ignore the exit status and rely on log parsing instead.
+echo "Using COMFY_WORKSPACE=${COMFY_WORKSPACE}" >&2
+comfy --workspace="${COMFY_WORKSPACE}" which 2>&1 | tee -a "$log" || true
+
+# Run installation (capture output). Some versions can return non-zero spuriously.
 set +e
-comfy node install --mode=remote "$@" 2>&1 | tee "$log"
+comfy --workspace="${COMFY_WORKSPACE}" node install --mode=remote "$@" 2>&1 | tee -a "$log"
 cli_status=$?
 set -e
 
-# extract node names that failed to install (one per line, uniq-sorted)
+# Detect install failures more robustly.
 failed_nodes=$(grep -oP "(?<=An error occurred while installing ')[^']+" "$log" | sort -u || true)
-
-# Fallback: capture names from "Node '<name>@' not found" lines if previous grep found nothing
 if [[ -z "$failed_nodes" ]]; then
   failed_nodes=$(grep -oP "(?<=Node ')[^@']+" "$log" | sort -u || true)
 fi
 
+# Also treat obvious tracebacks/errors as failure (even if node name isn't extracted).
+if grep -qiE "traceback|exception|ERROR|fatal:" "$log"; then
+  if [[ -z "$failed_nodes" ]]; then
+    failed_nodes="(unknown - see log)"
+  fi
+fi
+
 if [[ -n "$failed_nodes" ]]; then
-  echo "Comfy node installation failed for the following nodes:" >&2
+  echo "Comfy node installation failed for:" >&2
   echo "$failed_nodes" | while read -r n; do echo "  • $n" >&2 ; done
   echo >&2
-  echo "Please verify the node names at https://registry.comfy.org/ and try again." >&2
+  echo "Full log:" >&2
+  sed -n '1,220p' "$log" >&2 || true
   exit 1
 fi
 
-# If we reach here no failed nodes were detected. Warn if CLI exit status
-# was non-zero but treat it as success.
 if [[ $cli_status -ne 0 ]]; then
-  echo "Warning: comfy node install exited with status $cli_status but no errors were detected in the log — assuming success." >&2
+  echo "Warning: comfy node install exited with status $cli_status but no errors detected — assuming success." >&2
 fi
 
-exit 0 
+# Hard verification: ensure IPAdapterAdvanced is actually registered.
+# This catches: wrong workspace, node disabled, dependency import failure, etc.
+python - <<'PY'
+import os, sys, subprocess, re
+
+workspace = os.environ.get("COMFY_WORKSPACE", "/comfyui")
+# Ask comfy-cli where the real ComfyUI path is
+p = subprocess.run(["comfy", f"--workspace={workspace}", "which"], capture_output=True, text=True)
+out = p.stdout + "\n" + p.stderr
+m = re.search(r"Target ComfyUI path:\s*(.*)", out)
+if not m:
+    raise SystemExit("Could not parse 'comfy which' output. Ensure comfy-cli is installed and workspace is valid.\n" + out)
+
+comfy_path = m.group(1).strip()
+sys.path.insert(0, comfy_path)
+
+import nodes
+ok = "IPAdapterAdvanced" in getattr(nodes, "NODE_CLASS_MAPPINGS", {})
+print("ComfyUI path:", comfy_path)
+print("IPAdapterAdvanced present:", ok)
+if not ok:
+    raise SystemExit("IPAdapterAdvanced is NOT registered. Likely wrong workspace or import/dependency error in custom node.")
+PY
+
+echo "Custom node installation verified OK." >&2
