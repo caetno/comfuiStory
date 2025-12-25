@@ -120,6 +120,9 @@ RUN /usr/local/bin/comfy-manager-set-mode public \
  && comfy node install comfyui_ipadapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui \
  && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
 
+# Install insightface for IPAdapter FaceID
+RUN uv pip install insightface-0.7.3-cp312-cp311-win_amd64.whl
+
 # Add application code and scripts
 ADD src/start.sh handler.py test_input.json ./
 RUN chmod +x /start.sh
