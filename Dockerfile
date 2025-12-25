@@ -121,7 +121,7 @@ RUN /usr/local/bin/comfy-manager-set-mode public \
  && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
 
 # Install insightface for IPAdapter FaceID
-RUN uv pip install insightface-0.7.3-cp312-cp311-win_amd64.whl
+RUN uv pip install --no-cache-dir "insightface==0.7.3"
 
 # Add application code and scripts
 ADD src/start.sh handler.py test_input.json ./
