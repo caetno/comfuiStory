@@ -18,15 +18,17 @@ ENV PIP_PREFER_BINARY=1
 ENV PYTHONUNBUFFERED=1
 # Speed up some cmake builds
 ENV CMAKE_BUILD_PARALLEL_LEVEL=8
-# Reduce noisy Rust/HTTP trace logs in some environments (optional but helpful)
+# Reduce noisy Rust/HTTP trace logs in some environments (optional)
 ENV RUST_LOG=info
 ENV UV_LOG_LEVEL=info
 
 # Install Python, git and other necessary tools
-# NOTE: Added build-essential + pkg-config + libgomp1 to support packages that compile native extensions (e.g., insightface)
+# NOTE: Added python3.12-dev to provide Python.h for packages that compile extensions (insightface source build)
+# NOTE: Avoid apt-get autoremove to prevent removing git or other packages unexpectedly.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-venv \
+    python3.12-dev \
     git \
     wget \
     curl \
@@ -90,6 +92,7 @@ RUN set -eux; \
     done < /tmp/models.dirs; \
     \
     rm -f /tmp/models.dirs
+
 # --- SYMLINK IMPLEMENTATION END ---
 
 # Go back to the root
@@ -119,7 +122,7 @@ RUN /usr/local/bin/comfy-manager-set-mode public \
  && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
 
 # Install InsightFace + ONNX Runtime stack (matching what fixes your Runpod runtime)
-# NOTE: build-essential is present to handle any source builds; libgomp1 helps ONNX/OpenMP runtime on Ubuntu.
+# NOTE: With python3.12-dev present, source builds that require Python.h can compile.
 RUN uv pip install --no-cache-dir \
     pillow==10.2.0 \
     onnxruntime \
