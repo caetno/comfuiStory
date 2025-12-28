@@ -18,8 +18,12 @@ ENV PIP_PREFER_BINARY=1
 ENV PYTHONUNBUFFERED=1
 # Speed up some cmake builds
 ENV CMAKE_BUILD_PARALLEL_LEVEL=8
+# Reduce noisy Rust/HTTP trace logs in some environments (optional but helpful)
+ENV RUST_LOG=info
+ENV UV_LOG_LEVEL=info
 
 # Install Python, git and other necessary tools
+# NOTE: Added build-essential + pkg-config + libgomp1 to support packages that compile native extensions (e.g., insightface)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-venv \
@@ -33,14 +37,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender1 \
     ffmpeg \
+    build-essential \
+    pkg-config \
+    libgomp1 \
     && ln -sf /usr/bin/python3.12 /usr/bin/python \
-    && ln -sf /usr/bin/pip3 /usr/bin/pip \
-    && apt-get autoremove -y \
-    && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/*
-
-# Clean up to reduce image size
-RUN apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 # Install uv (latest) using official installer and create isolated venv
 RUN wget -qO- https://astral.sh/uv/install.sh | sh \
@@ -70,7 +71,6 @@ RUN if [ "$ENABLE_PYTORCH_UPGRADE" = "true" ]; then \
 WORKDIR /comfyui
 
 # --- SYMLINK IMPLEMENTATION START ---
-
 COPY config/models.dirs /tmp/models.dirs
 
 RUN set -eux; \
@@ -90,7 +90,6 @@ RUN set -eux; \
     done < /tmp/models.dirs; \
     \
     rm -f /tmp/models.dirs
-
 # --- SYMLINK IMPLEMENTATION END ---
 
 # Go back to the root
@@ -116,12 +115,16 @@ RUN chmod +x /usr/local/bin/prefetch-annotators
 COPY config/annotators.manifest /tmp/annotators.manifest
 
 RUN /usr/local/bin/comfy-manager-set-mode public \
- #&& /usr/local/bin/comfy-node-install ComfyUI_IPAdapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui \
  && comfy node install comfyui_ipadapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui \
  && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
 
-# Install ONNX Runtime
-RUN uv pip install --no-cache-dir pillow==10.2.0 insightface onnxruntime onnxruntime-gpu
+# Install InsightFace + ONNX Runtime stack (matching what fixes your Runpod runtime)
+# NOTE: build-essential is present to handle any source builds; libgomp1 helps ONNX/OpenMP runtime on Ubuntu.
+RUN uv pip install --no-cache-dir \
+    pillow==10.2.0 \
+    onnxruntime \
+    onnxruntime-gpu \
+    insightface
 
 # Add application code and scripts
 ADD src/start.sh handler.py test_input.json ./
