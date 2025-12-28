@@ -124,9 +124,34 @@ RUN /usr/local/bin/comfy-manager-set-mode public \
 RUN uv pip install --no-cache-dir "onnxruntime-gpu" || uv pip install --no-cache-dir "onnxruntime"
 
 # Install insightface for IPAdapter FaceID
-ADD https://huggingface.co/AlienMachineAI/insightface-0.7.3-cp312-cp312-linux_x86_64.whl/resolve/main/insightface-0.7.3-cp312-cp312-linux_x86_64.whl /tmp/insightface.whl
-RUN uv pip install --no-cache-dir "numpy==1.26.4" \
- && uv pip install --no-cache-dir /tmp/insightface.whl
+# Install InsightFace for IPAdapter FaceID (with persistent build logs)
+RUN set -eux; \
+    mkdir -p /buildlogs
+
+# Prefer curl over ADD so HTTP failures show clearly
+RUN set -eux; \
+    curl -L --fail -o /tmp/insightface.whl \
+      "https://huggingface.co/AlienMachineAI/insightface-0.7.3-cp312-cp312-linux_x86_64.whl/resolve/main/insightface-0.7.3-cp312-cp312-linux_x86_64.whl"; \
+    ls -lh /tmp/insightface.whl
+
+RUN set -eux; \
+    { \
+      echo "===== ENV CHECK ====="; \
+      date; \
+      echo "PATH=$PATH"; \
+      which python || true; python -V || true; \
+      python -c "import sys; print(sys.executable); print(sys.version)" || true; \
+      which uv || true; uv --version || true; uv pip --version || true; \
+      echo "===== PIP DEBUG ====="; \
+      python -m pip debug --verbose || true; \
+      echo "===== INSTALL numpy ====="; \
+      uv pip install -vvv --no-cache-dir "numpy==1.26.4"; \
+      echo "===== INSTALL insightface wheel ====="; \
+      uv pip install -vvv --no-cache-dir /tmp/insightface.whl; \
+      echo "===== FREEZE ====="; \
+      uv pip freeze; \
+    } 2>&1 | tee /buildlogs/insightface_install.log
+
 
 
 # Add application code and scripts
