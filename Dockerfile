@@ -118,7 +118,7 @@ RUN chmod +x /usr/local/bin/prefetch-annotators
 COPY config/annotators.manifest /tmp/annotators.manifest
 
 RUN /usr/local/bin/comfy-manager-set-mode public \
- && comfy node install comfyui_ipadapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui \
+ && comfy node install comfyui_ipadapter_plus comfyui_controlnet_aux comfyui-impact-pack rgthree-comfy efficiency-nodes-comfyui comfyui_ultimatesdupscale \
  && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
 
 # Install InsightFace + ONNX Runtime stack (matching what fixes your Runpod runtime)
