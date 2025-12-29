@@ -16,6 +16,7 @@ model_patches
 photomaker
 style_models
 text_encoders
+ultralytics/bbox
 unet
 upscale_models
 vae
