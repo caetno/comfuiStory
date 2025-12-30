@@ -1,30 +1,26 @@
-# Build argument for base image selection
+# syntax=docker/dockerfile:1
+
 ARG BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
 
-# Stage 1: Base image with common dependencies
-FROM ${BASE_IMAGE} AS base
+# =========================
+# Stage 1: Builder
+# =========================
+FROM ${BASE_IMAGE} AS builder
 
-# Build arguments for this stage with sensible defaults for standalone builds
 ARG COMFYUI_VERSION=latest
 ARG CUDA_VERSION_FOR_COMFY
 ARG ENABLE_PYTORCH_UPGRADE=false
 ARG PYTORCH_INDEX_URL
 
-# Prevents prompts from packages asking for user input during installation
-ENV DEBIAN_FRONTEND=noninteractive
-# Prefer binary wheels over source distributions for faster pip installations
-ENV PIP_PREFER_BINARY=1
-# Ensures output from python is printed immediately to the terminal without buffering
-ENV PYTHONUNBUFFERED=1
-# Speed up some cmake builds
-ENV CMAKE_BUILD_PARALLEL_LEVEL=8
-# Reduce noisy Rust/HTTP trace logs in some environments (optional)
-ENV RUST_LOG=info
-ENV UV_LOG_LEVEL=info
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_PREFER_BINARY=1 \
+    PYTHONUNBUFFERED=1 \
+    CMAKE_BUILD_PARALLEL_LEVEL=8 \
+    RUST_LOG=info \
+    UV_LOG_LEVEL=info \
+    PIP_NO_INPUT=1
 
-# Install Python, git and other necessary tools
-# NOTE: Added python3.12-dev to provide Python.h for packages that compile extensions (insightface source build)
-# NOTE: Avoid apt-get autoremove to prevent removing git or other packages unexpectedly.
+# Build deps + tools needed for installing nodes and compiling any extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-venv \
@@ -45,17 +41,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/bin/python3.12 /usr/bin/python \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv (latest) using official installer and create isolated venv
+# Install uv and create venv
 RUN wget -qO- https://astral.sh/uv/install.sh | sh \
-    && ln -s /root/.local/bin/uv /usr/local/bin/uv \
-    && ln -s /root/.local/bin/uvx /usr/local/bin/uvx \
+    && ln -sf /root/.local/bin/uv /usr/local/bin/uv \
+    && ln -sf /root/.local/bin/uvx /usr/local/bin/uvx \
     && uv venv /opt/venv
 
-# Use the virtual environment for all subsequent commands
-ENV PATH="/opt/venv/bin:${PATH}"
+ENV PATH="/opt/venv/bin:${PATH}" \
+    VIRTUAL_ENV="/opt/venv"
 
-# Install comfy-cli + dependencies needed by it to install ComfyUI
-RUN uv pip install comfy-cli pip setuptools wheel
+# Install comfy-cli and bootstrap tooling
+RUN uv pip install --upgrade pip setuptools wheel comfy-cli
 
 # Install ComfyUI
 RUN if [ -n "${CUDA_VERSION_FOR_COMFY}" ]; then \
@@ -64,75 +60,90 @@ RUN if [ -n "${CUDA_VERSION_FOR_COMFY}" ]; then \
       /usr/bin/yes | comfy --workspace /comfyui install --version "${COMFYUI_VERSION}" --nvidia; \
     fi
 
-# Upgrade PyTorch if needed (for newer CUDA versions)
-RUN if [ "$ENABLE_PYTORCH_UPGRADE" = "true" ]; then \
-      uv pip install --force-reinstall torch torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}; \
+# Optional PyTorch upgrade
+RUN if [ "${ENABLE_PYTORCH_UPGRADE}" = "true" ]; then \
+      uv pip install --force-reinstall torch torchvision torchaudio --index-url "${PYTORCH_INDEX_URL}"; \
     fi
 
-# Change working directory to ComfyUI
-WORKDIR /comfyui
-
-# --- SYMLINK IMPLEMENTATION START ---
-COPY config/models.dirs /tmp/models.dirs
-
-RUN set -eux; \
-    while IFS= read -r d; do \
-      [ -z "$d" ] && continue; \
-      mkdir -p "/runpod-volume/${d}"; \
-    done < /tmp/models.dirs; \
-    \
-    while IFS= read -r d; do \
-      [ -z "$d" ] && continue; \
-      rm -rf "/comfyui/models/${d}"; \
-    done < /tmp/models.dirs; \
-    \
-    while IFS= read -r d; do \
-      [ -z "$d" ] && continue; \
-      mkdir -p "/comfyui/models/$(dirname "${d}")"; \
-      ln -s "/runpod-volume/${d}" "/comfyui/models/${d}"; \
-    done < /tmp/models.dirs; \
-    \
-    rm -f /tmp/models.dirs
-# --- SYMLINK IMPLEMENTATION END ---
-
-
-# Go back to the root
-WORKDIR /
-
-# Install Python runtime dependencies for the handler
+# Handler deps (stay in venv so we can copy just the venv to runtime)
 RUN uv pip install runpod requests websocket-client
 
-# Add script to install custom nodes
+# Add scripts needed during build (node installs, prefetch)
 COPY scripts/comfy-node-install.sh /usr/local/bin/comfy-node-install
-RUN chmod +x /usr/local/bin/comfy-node-install
-
-# Prevent pip from asking for confirmation during uninstall steps in custom nodes
-ENV PIP_NO_INPUT=1
-
-# Copy helper script to switch Manager network mode at container start
 COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
-RUN chmod +x /usr/local/bin/comfy-manager-set-mode
-
-# Add annotator prefetch tooling + manifest
 COPY scripts/prefetch-annotators.sh /usr/local/bin/prefetch-annotators
-RUN chmod +x /usr/local/bin/prefetch-annotators
-COPY config/annotators.manifest /tmp/annotators.manifest
+RUN chmod +x /usr/local/bin/comfy-node-install /usr/local/bin/comfy-manager-set-mode /usr/local/bin/prefetch-annotators
 
+# Prefetch annotators + install custom nodes
+COPY config/annotators.manifest /tmp/annotators.manifest
 RUN /usr/local/bin/comfy-manager-set-mode public \
  && comfy node install comfyui_ipadapter_plus comfyui_controlnet_aux comfyui-impact-pack comfyui-impact-subpack rgthree-comfy efficiency-nodes-comfyui comfyui_ultimatesdupscale \
- && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest
+ && /usr/local/bin/prefetch-annotators /tmp/annotators.manifest \
+ && rm -f /tmp/annotators.manifest
 
-# Install InsightFace + ONNX Runtime stack (matching what fixes your Runpod runtime)
-# NOTE: With python3.12-dev present, source builds that require Python.h can compile.
+# Heavy GPU deps (kept isolated so it caches well)
+# NOTE: You used --no-cache-dir; keep it if you prefer smaller layers,
+# but it means a cache miss re-downloads huge wheels.
 RUN uv pip install --no-cache-dir \
     pillow==10.2.0 \
     onnxruntime \
     onnxruntime-gpu \
     insightface
 
-# Add application code and scripts
-ADD src/start.sh handler.py test_input.json ./
+# Model symlink layer (build-time)
+WORKDIR /comfyui
+COPY config/models.dirs /tmp/models.dirs
+RUN set -eux; \
+    while IFS= read -r d; do [ -z "$d" ] && continue; mkdir -p "/runpod-volume/${d}"; done < /tmp/models.dirs; \
+    while IFS= read -r d; do [ -z "$d" ] && continue; rm -rf "/comfyui/models/${d}"; done < /tmp/models.dirs; \
+    while IFS= read -r d; do [ -z "$d" ] && continue; mkdir -p "/comfyui/models/$(dirname "${d}")"; ln -s "/runpod-volume/${d}" "/comfyui/models/${d}"; done < /tmp/models.dirs; \
+    rm -f /tmp/models.dirs
+
+# =========================
+# Stage 2: Runtime (lean)
+# =========================
+FROM ${BASE_IMAGE} AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_PREFER_BINARY=1 \
+    PYTHONUNBUFFERED=1 \
+    RUST_LOG=info \
+    UV_LOG_LEVEL=info \
+    PIP_NO_INPUT=1
+
+# Runtime deps only (no build-essential, no git, no python-dev)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-venv \
+    ca-certificates \
+    curl \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    ffmpeg \
+    libgomp1 \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only what you need to run
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /comfyui /comfyui
+
+# Runtime scripts (used by start.sh)
+COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
+RUN chmod +x /usr/local/bin/comfy-manager-set-mode
+
+ENV PATH="/opt/venv/bin:${PATH}" \
+    VIRTUAL_ENV="/opt/venv"
+
+WORKDIR /
+
+# Put frequently changed files LAST for fastest rebuilds
+COPY src/start.sh /start.sh
+COPY handler.py /handler.py
+COPY test_input.json /test_input.json
 RUN chmod +x /start.sh
 
-# Set the default command to run when starting the container
 CMD ["/start.sh"]
